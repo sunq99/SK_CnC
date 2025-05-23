@@ -1,11 +1,13 @@
 import streamlit as st
+st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")
+st.title("ASAC 저작권법 법률 자문에 오신 것을 환영합니다.")
 import re
 import time
 import json
 import gdown
 import os
-
 import openai
+
 from openai import OpenAI
 from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from intent_analysis import intent_analysis
@@ -79,9 +81,6 @@ def clean_incomplete_sentences(content):
         return None
 
     return content
-
-st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")
-st.title("ASAC 저작권법 법률 자문에 오신 것을 환영합니다.")
 
 st.markdown("""
 <div style='font-size:18px; line-height:1.6'>

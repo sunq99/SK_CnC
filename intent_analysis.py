@@ -1,12 +1,11 @@
 import re
 import json
-import streamlit as st
+from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
-
 
 def intent_analysis(user_input):
     # 사용자 질문
@@ -18,7 +17,7 @@ def intent_analysis(user_input):
     llm = ChatOpenAI(
           temperature=0,
           model_name = 'gpt-4-turbo',
-          openai_api_key=st.secrets["OPENAI_API_KEY"]
+          openai_api_key = OPENAI_API_KEY
     )
 
     # 사용자 질문 의도 파악 ########################## 수정 (5,6번 제거, 시행령 추가)

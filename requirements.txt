@@ -1,4 +1,10 @@
 # requirements
-!pip install -q -U langchain langchain-community faiss-cpu tiktoken pyngrok streamlit gspread oauth2client
-!pip install -q flash-attn --no-build-isolation
-!gdown 1beWJlnc92f3MOp_i1XSJU6AvJVomeHvr
+langchain
+langchain-community
+faiss-cpu
+tiktoken
+pyngrok
+streamlit
+gspread
+oauth2client
+flash-attn --no-build-isolation

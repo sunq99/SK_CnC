@@ -5,7 +5,7 @@ import json
 
 import openai
 from openai import OpenAI
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from intent_analysis import intent_analysis
 from generate_multiquery_and_retrieve import generate_multiquery_and_retrieve
 from generate_answer_and_evaluate import generate_answer_and_evaluate

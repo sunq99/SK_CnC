@@ -2,10 +2,11 @@ import streamlit as st
 import re
 import time
 import json
+improt os
 
 import openai
 from openai import OpenAI
-from config import OPENAI_API_KEY
+from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from intent_analysis import intent_analysis
 from generate_multiquery_and_retrieve import generate_multiquery_and_retrieve
 from generate_answer_and_evaluate import generate_answer_and_evaluate
@@ -20,6 +21,13 @@ from sentence_transformers import CrossEncoder
 
 openai.api_key = OPENAI_API_KEY
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+uploaded_file = st.file_uploader("FAISS 인덱스 파일 업로드 (index.faiss)", type=["faiss"])
+if uploaded_file is not None:
+    os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+    with open(os.path.join(FAISS_INDEX_PATH, "index.faiss"), "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    st.success("index.faiss 업로드 완료")
 
 def clean_incomplete_sentences(content):
     """

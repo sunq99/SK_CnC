@@ -3,7 +3,7 @@ import re
 import time
 import json
 
-import openai
+# import openai
 from openai import OpenAI
 from config import OPENAI_API_KEY
 from intent_analysis import intent_analysis

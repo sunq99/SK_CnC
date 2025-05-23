@@ -18,8 +18,54 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
 
-openai.api_key = OPENAI_API_KEY
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+def clean_incomplete_sentences(content):
+    """
+    미완성 문장을 처리하는 함수 (streamlit용)
+    """
+    import re
+
+    # 1. 문장 시작 부분의 쉼표 제거
+    if content.strip().startswith(','):
+        content = content.strip()[1:].strip()
+        content = "...(중략) " + content
+
+    # 2. 문장 시작 부분의 닫힌 괄호 제거 (개선된 버전)
+    if content.strip().startswith(')'):
+        # 닫힌 괄호와 그 다음의 연결어들을 모두 제거
+        content = re.sub(r'^\s*\)\s*(및|그리고|또는|혹은)?\s*', '', content).strip()
+        if content:
+            content = "...(전략) " + content
+
+    # 3. 법률 개정 날짜 패턴 처리
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s*법률\s*제\d+호로\s*개정되기\s*전의\s*것\)\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 4. 불완전한 법률 조항 참조 처리
+    pattern = r'^\s*전의\s*것\)\s*제\d+조(?:의\d+)?\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 5. 숫자와 점으로만 시작하는 경우
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s+'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 6. 빈 문장이나 너무 짧은 문장 처리
+    content = content.strip()
+    if not content or len(content) < 5:
+        return None
+
+    return content
 
 st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")
 st.title("ASAC 저작권법 법률 자문에 오신 것을 환영합니다.")
@@ -125,7 +171,16 @@ if st.session_state.active_chat and st.session_state.active_chat != "대화 준�
                         icon = type_icon_map.get(doc_type, "📎")
                         label = f"{icon} {doc_type or '문서'} {i+1}"
                         st.write(f"**{label}**")
-                        st.write(doc.page_content[:300] + "...")
+                        doc_content = doc.page_content
+                        cleaned_content = clean_incomplete_sentences(doc_content)
+                        if cleaned_content:
+                            display_content = cleaned_content[:300]
+                            if len(cleaned_content) > 300:
+                                display_content += "..."
+                            st.write(display_content)
+                        else:
+                            st.write("(내용 없음)")
+
                         visible_keys = ['사건명', '사건번호', '선고일자', '법원명']
                         meta = {k: v for k, v in doc.metadata.items() if k in visible_keys}
 

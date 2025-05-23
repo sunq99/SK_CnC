@@ -27,7 +27,7 @@ FAISS_INDEX_PATH = "faiss_index"
 os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
 
 # Google Drive 공유 링크에서 파일 ID 추출
-file_id = "1-Kj768zG_e2td3uPTwsDn8C5aKzRDHpA"
+file_id = "1-CWb77ho-P5j1ZZTMXG7Iey4nXaFkoAr"
 output = f"{FAISS_INDEX_PATH}/index.faiss"
 
 if not os.path.exists(output):

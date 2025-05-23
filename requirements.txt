@@ -1,6 +1,7 @@
 # requirements
 langchain
 langchain-community
+langchain_openai
 faiss-cpu
 tiktoken
 pyngrok

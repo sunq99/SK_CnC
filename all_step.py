@@ -32,7 +32,6 @@ def all_step(query):
         model="text-embedding-3-large",
         openai_api_key=OPENAI_API_KEY
     )
-    FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "./faiss_index")
     vectorstore = FAISS.load_local(FAISS_INDEX_PATH, embeddings_model, allow_dangerous_deserialization=True)
 
     llm = ChatOpenAI(

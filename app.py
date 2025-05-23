@@ -2,7 +2,7 @@ import streamlit as st
 import re
 import time
 import json
-improt os
+import os
 
 import openai
 from openai import OpenAI

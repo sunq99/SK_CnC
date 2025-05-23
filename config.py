@@ -1,3 +1,4 @@
-OPENAI_API_KEY = "OPENAI_API_KEY"
-FAISS_INDEX_PATH = "/content/faiss_index_path"
-# CSV_PATH = "/content/저작권법 조문.csv"
+import streamlit as st
+
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+FAISS_INDEX_PATH = st.secrets["FAISS_INDEX_PATH"]

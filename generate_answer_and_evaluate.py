@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import streamlit as st
 from langchain.chat_models import ChatOpenAI
 from langchain_openai import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -9,193 +8,212 @@ from ragas import EvaluationDataset, evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 
-#OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-
 ragas_llm = ChatOpenAI(model="gpt-4o")
 ragas_embeddings = OpenAIEmbeddings()
 
-def generate_answer_and_evaluate(query, filtered_docs, llm): ################################ 수정 (함수 전체적으로 수정- 문서 처리)
+def clean_incomplete_sentences(content):
+    """
+    미완성 문장을 처리하는 개선된 함수
+    """
+
+    # 1. 문장 시작 부분의 쉼표 제거 (앞에 아무것도 없이 쉼표로 시작하는 경우)
+    if content.strip().startswith(','):
+        content = content.strip()[1:].strip()
+        # 앞에 내용이 잘린 것이므로 중략 표시 추가
+        content = "...(중략) " + content
+
+    # 2. 문장 시작 부분의 닫힌 괄호 제거 (개선된 버전)
+    if content.strip().startswith(')'):
+        # 닫힌 괄호와 그 다음의 연결어들을 모두 제거
+        content = re.sub(r'^\s*\)\s*(및|그리고|또는|혹은)?\s*', '', content).strip()
+        if content:
+            content = "...(중략) " + content
+
+    # 3. 법률 개정 날짜 패턴 처리 (예: "1. 26. 법률 제16600호로 개정되기 전의 것)")
+    # 연도가 없는 날짜 패턴을 찾아서 처리
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s*법률\s*제\d+호로\s*개정되기\s*전의\s*것\)\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 4. 불완전한 법률 조항 참조 처리 (예: "전의 것) 제35조의3")
+    pattern = r'^\s*전의\s*것\)\s*제\d+조(?:의\d+)?\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 5. 문장 중간에 나타나는 불완전한 괄호 내용 제거
+    # (2019. 1. 26. 법률 제16600호로 개정되기 전의 것) 같은 패턴
+    pattern = r'\(\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.\s*법률\s*제\d+호로\s*개정되기\s*전의\s*것\)'
+    content = re.sub(pattern, '', content)
+
+    # 6. 숫자와 점으로만 시작하는 경우 (예: "1. 26. ")
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s+'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 7. 점으로 시작하는 경우
+    if content.strip().startswith('.'):
+        content = re.sub(r'^\.\s*', '', content)
+        if content.strip():
+            content = "...(중략) " + content
+
+    # 8. 숫자만으로 시작하는 경우
+    content = re.sub(r'^\s*\d+\s+', '', content)
+
+    # 9. 판례 인용 패턴 처리
+    # "선고 OO다OO 판결 참조), " 패턴 찾기
+    pattern = r'선고\s+\d+\s*다\s*\d+\s*판결\s*참조\)\s*,'
+    match = re.search(pattern, content)
+    if match:
+        end_pos = match.end()
+        content = content[:end_pos] + " ...(중략)"
+
+    # 10. 괄호 밸런스 확인 및 수정 (개선된 버전)
+    def fix_parentheses(text):
+        open_count = text.count('(')
+        close_count = text.count(')')
+
+        # 닫힌 괄호가 더 많은 경우 (앞부분이 잘린 경우)
+        if close_count > open_count:
+            # 첫 번째 균형이 맞지 않는 닫힌 괄호 찾기
+            balance = 0
+            for i, char in enumerate(text):
+                if char == '(':
+                    balance += 1
+                elif char == ')':
+                    balance -= 1
+                    if balance < 0:  # 여기서 불균형 발생
+                        # 이 위치부터 시작
+                        text = text[i+1:].strip()
+                        if text:
+                            text = "...(전략) " + text
+                        break
+
+        # 열린 괄호가 더 많은 경우 (뒷부분이 잘린 경우)
+        elif open_count > close_count:
+            # 마지막 균형이 맞는 지점 찾기
+            balance = 0
+            last_balanced = -1
+            for i, char in enumerate(text):
+                if char == '(':
+                    balance += 1
+                elif char == ')':
+                    balance -= 1
+                if balance == 0:
+                    last_balanced = i
+
+            if last_balanced > 0 and last_balanced < len(text) - 1:
+                text = text[:last_balanced+1] + " ...(후략)"
+
+        return text
+
+    content = fix_parentheses(content)
+
+    # 11. 콜론(:) 다음에 콤마(,)가 오는 경우 처리
+    content = re.sub(r':\s*,\s*', '', content)
+
+    # 12. 문장 끝 처리
+    # 조사나 어미 없이 끝나는 경우
+    if re.search(r'[가-힣]\s*$', content):
+        last_word = content.strip().split()[-1] if content.strip().split() else ''
+        # 완전한 문장 종결어미가 아닌 경우
+        if not re.search(r'(다|요|죠|음|임|함|까|네)$', last_word):
+            # 마지막 완전한 문장 찾기
+            last_sentence_end = max(content.rfind('. '), content.rfind('.\n'),
+                                   content.rfind('? '), content.rfind('! '))
+            if last_sentence_end > 0:
+                content = content[:last_sentence_end+1] + " ...(후략)"
+            else:
+                content = content.strip() + "...(후략)"
+
+    # 13. 쉼표로 끝나는 경우
+    if content.strip().endswith(','):
+        content = content.strip()[:-1] + "...(후략)"
+
+    # 14. 열린 괄호로 끝나는 경우
+    if content.strip().endswith('('):
+        content = content.strip()[:-1].strip() + "...(후략)"
+
+    # 15. 빈 문장이나 너무 짧은 문장 처리
+    content = content.strip()
+    if not content or len(content) < 5 or content in ['.', ',', ')', '(']:
+        return None
+
+    return content
+
+def generate_answer_and_evaluate(query, filtered_docs, llm):
     # 프롬프트 구성
     final_ref = []
     response_prompt = f"다음은 '{query}'에 대한 관련 정보입니다:\n\n"
 
     # 중복이 제거된 문서들을 프롬프트에 추가
+    doc_count = 0  # 실제 문서 번호를 추적
     for i, doc in enumerate(filtered_docs):
         doc_type = doc.metadata.get('문서유형', '')
-
-        # 문서 내용 가져오기
         content = doc.page_content
 
-        # 미완성 문장 처리 (여러 패턴 대응)
+        # ===== 새로운 미완성 문장 처리 함수 사용 =====
+        cleaned_content = clean_incomplete_sentences(content)
 
-        # 괄호 밸런스 확인 및 수정
-        def fix_unbalanced_parentheses(text):
-            # 열린 괄호와 닫힌 괄호 개수 확인
-            open_count = text.count('(')
-            close_count = text.count(')')
-
-            # 괄호 불균형 확인
-            if open_count > close_count:
-                # 열린 괄호가 더 많은 경우, 마지막 완전한 괄호 구문 이후 내용 제거
-                # 가장 마지막 닫힌 괄호 위치 찾기
-                last_close_idx = text.rfind(')')
-                if last_close_idx > 0:
-                    # 해당 닫힌 괄호와 짝을 이루는 열린 괄호 찾기 시도
-                    stack = []
-                    for idx, char in enumerate(text[:last_close_idx+1]):
-                        if char == '(':
-                            stack.append(idx)
-                        elif char == ')':
-                            if stack:  # 짝이 맞는 열린 괄호가 있으면 pop
-                                stack.pop()
-                            # 스택이 비어있으면 짝이 안 맞는 닫힌 괄호
-
-                    # 아직 짝이 없는 열린 괄호가 있는 경우
-                    if stack:
-                        # 가장 마지막 짝이 맞는 괄호 구조 이후 위치 찾기
-                        pos = last_close_idx + 1
-                        # 불완전한 구문을 제거하고 중략 표시 추가
-                        return text[:pos] + "...(후략)"
-
-            # 닫힌 괄호가 더 많은 경우, 첫 번째 닫힌 괄호 위치 전까지만 사용
-            elif close_count > open_count:
-                first_unmatched_close = -1
-                stack = []
-                for idx, char in enumerate(text):
-                    if char == '(':
-                        stack.append(idx)
-                    elif char == ')':
-                        if stack:  # 짝이 맞는 열린 괄호가 있으면 pop
-                            stack.pop()
-                        else:  # 짝이 없는 첫 번째 닫힌 괄호 찾기
-                            first_unmatched_close = idx
-                            break
-
-                if first_unmatched_close > 0:
-                    return "(전략)... " + text[first_unmatched_close+1:]
-
-            # 괄호가 균형을 이루거나 수정이 필요없는 경우
-            return text
-
-        # 판례 인용 패턴 처리
-        def fix_case_citation(text):
-            # "선고 OO다OO 판결 참조), " 패턴 찾기
-            pattern = r'선고\s+\d+\s*다\s*\d+\s*판결\s*참조\)\s*,'
-            match = re.search(pattern, text)
-            if match:
-                # 매치된 부분의 끝 위치
-                end_pos = match.end()
-                # 앞부분은 유지하고 패턴 이후의 내용은 중략 표시로 대체
-                return text[:end_pos] + " ...(중략)"
-            return text
-
-        #### 미완성 문장 처리 (여러 패턴 대응) ###
-
-        # 판례 인용 패턴 처리
-        content = fix_case_citation(content)
-
-        # 괄호 밸런스 확인 및 수정
-        content = fix_unbalanced_parentheses(content)
-
-        # 내용이 쉼표(,)로 시작하는 경우 처리
-        if content.strip().startswith(','):
-            content = "...(중략) " + content.strip()[1:].strip()
-
-        # 문장이 특정 패턴으로 시작하는 경우
-        if content.startswith('.') or content.startswith(')') or re.match(r'^\s*[0-9]+\.', content):
-            content = re.sub(r'^\.\s*', '', content)
-
-        # 미완성 문장이 끝나는 경우
-        if content.endswith('(') or content.endswith(',') or re.search(r'[a-zA-Z가-힣]\s*$', content):
-            content = content.strip() + "..."
-
-        # 기존 코드의 미완성 문장 처리 (점으로 시작하는 경우)
-        if content.startswith('.'):
-            content = re.sub(r'^\.\s*[^.]*\)\s*', '', content)
-
-        # 콜론(:) 다음에 콤마(,)가 오는 경우 처리
-        content = re.sub(r':\s*,\s*', '', content)
-
-        # 문장이 "이" 또는 "화"와 같은 한글 한 글자로 끝나는 경우 (잘린 문장)
-        if re.search(r'[가-힣]\s*$', content) and len(content.strip()) > 0:
-            last_char = content.strip()[-1]
-            # 문장 종결 조사가 아닌 경우에만 처리
-            if last_char not in ['다', '까', '요', '죠', '잖', '죠', '네', '요', '임']:
-                # 마지막 완전한 문장 찾기
-                last_sentence_end = max(content.rfind('. '), content.rfind('.\n'), content.rfind('? '), content.rfind('! '))
-                if last_sentence_end > 0:
-                    # 마지막 완전한 문장까지만 유지하고 나머지는 제거
-                    content = content[:last_sentence_end+1] + " ...(후략)"
-                else:
-                    # 완전한 문장 구분이 없으면 그대로 ... 추가
-                    content = content.strip() + "..."
-
-        # 특정 판례 인용 패턴 처리 (예: "7. 12. 선고 77다90 판결 참조),")
-        pattern = r'\d+\.\s*\d+\.\s*선고\s+\d+다\d+\s*판결\s*참조\)\s*,\s*'
-        if re.search(pattern, content):
-            match = re.search(pattern, content)
-            if match:
-                end_pos = match.end()
-                if end_pos < len(content):
-                    # 패턴 이후 내용이 한 문장 이상인 경우에만 중략 처리
-                    sentences_after = re.split(r'[.!?]\s+', content[end_pos:])
-                    if len(sentences_after) > 1 and len(sentences_after[0]) > 20:
-                        content = content[:end_pos] + "...(이하 생략)"
-
-        # 맨 앞에 숫자 하나만 있는 경우 처리
-        content = re.sub(r'^\s*(\d+)\s+', '', content)
-
-        # 빈 문장이나 특수문자만 있는 문장 필터링
-        content = content.strip()
-        if not content or content in ['.', ',', ')', '(']:
+        # 처리 결과가 None이면 이 문서는 건너뛰기
+        if cleaned_content is None:
             continue
 
-        # 문서 유형에 따른 참조 형식 생성 ################################################# 수정(부칙, 시행령, 해석례 처리 안됐던 부분 수정)
+        content = cleaned_content
+        doc_count += 1  # 유효한 문서만 카운트
+        # =========================================
+
+        # 문서 유형에 따른 참조 형식 생성
         if doc_type == '법령':
             article_num = doc.metadata.get('조문번호', '')
             article_title = doc.metadata.get('조문제목', '')
             ho_num = doc.metadata.get('호번호', '')
 
             if ho_num:
-                reference = f"[법령 {i+1}] 저작권법 제{article_num} {article_title} 제{ho_num}호: {content}"
+                reference = f"[법령 {doc_count}] 저작권법 제{article_num} {article_title} 제{ho_num}호: {content}"
             else:
-                reference = f"[법령 {i+1}] 저작권법 제{article_num} {article_title}: {content}"
+                reference = f"[법령 {doc_count}] 저작권법 제{article_num} {article_title}: {content}"
 
         elif doc_type == '시행령':
             ord_num = doc.metadata.get('시행령_조문번호', '')
             ord_title = doc.metadata.get('시행령_조문제목', '')
             ord_ho_num = doc.metadata.get('호번호', '')
 
-            if ord_ho_num:  # 'ho_num'이 아닌 'ord_ho_num' 사용 (변수명 수정)
-                reference = f"[법령 {i+1}] 저작권법 시행령 제{ord_num} {ord_title} 제{ord_ho_num}호: {content}"
+            if ord_ho_num:
+                reference = f"[법령 {doc_count}] 저작권법 시행령 제{ord_num} {ord_title} 제{ord_ho_num}호: {content}"
             else:
-                reference = f"[법령 {i+1}] 저작권법 시행령 제{ord_num} {ord_title}: {content}"
+                reference = f"[법령 {doc_count}] 저작권법 시행령 제{ord_num} {ord_title}: {content}"
 
         elif doc_type == '부칙':
             sub_num = doc.metadata.get('부칙_조문번호', '')
             sub_title = doc.metadata.get('부칙_조문제목', '')
             hang_num = doc.metadata.get('항번호', '')
 
-            if hang_num:  # 'ho_num'이 아닌 'hang_num' 사용 (변수명 수정)
-                reference = f"[법령 {i+1}] 저작권법 부칙 제{sub_num} {sub_title} 제{hang_num}호: {content}"
+            if hang_num:
+                reference = f"[법령 {doc_count}] 저작권법 부칙 제{sub_num} {sub_title} 제{hang_num}호: {content}"
             else:
-                reference = f"[법령 {i+1}] 저작권법 부칙 제{sub_num} {sub_title}: {content}"
+                reference = f"[법령 {doc_count}] 저작권법 부칙 제{sub_num} {sub_title}: {content}"
 
         elif doc_type == '판례':
             case_num = doc.metadata.get('사건번호', doc.metadata.get('판례번호', ''))
             case_date = doc.metadata.get('선고일자', doc.metadata.get('판결일자', ''))
             court = doc.metadata.get('법원명', '')
 
-            reference = f"[판례 {i+1}] {court} {case_num} ({case_date}): {content}"
+            reference = f"[판례 {doc_count}] {court} {case_num} ({case_date}): {content}"
 
         elif doc_type == '해석례':
             exp_name = doc.metadata.get('안건명', '')
             exp_date = doc.metadata.get('회신일자', '')
 
-            reference = f"[해석례 {i+1}] {exp_name} ({exp_date}): {content}"
+            reference = f"[해석례 {doc_count}] {exp_name} ({exp_date}): {content}"
 
         else:
-            reference = f"[참조 {i+1}] {content}"
+            reference = f"[참조 {doc_count}] {content}"
 
         response_prompt += reference + "\n\n"
         final_ref.append(reference)

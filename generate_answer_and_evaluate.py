@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from config import OPENAI_API_KEY
 from langchain.chat_models import ChatOpenAI
 from langchain_openai import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -8,10 +9,8 @@ from ragas import EvaluationDataset, evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-
-ragas_llm = ChatOpenAI(model="gpt-4o")
-ragas_embeddings = OpenAIEmbeddings()
+ragas_llm = ChatOpenAI(model="gpt-4o", openai_api_key=OPENAI_API_KEY)
+ragas_embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
 def clean_incomplete_sentences(content):
     """

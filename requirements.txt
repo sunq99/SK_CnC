@@ -10,4 +10,5 @@ openai
 gspread
 oauth2client
 sentence-transformers
+ragas
 #flash-attn --no-build-isolation

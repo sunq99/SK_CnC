@@ -25,17 +25,20 @@ from sentence_transformers import CrossEncoder
 openai.api_key = OPENAI_API_KEY
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-FAISS_INDEX_PATH = "faiss_index"
-os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+FAISS_INDEX_PATH = "./faiss_index"
+FOLDER_ID = "10n5zKDSvgdA2MWGpy39xn40kb0IkGUn2"
 
-# Google Drive 공유 링크에서 파일 ID 추출
-file_id = "1-CWb77ho-P5j1ZZTMXG7Iey4nXaFkoAr"
-output = f"{FAISS_INDEX_PATH}/index.faiss"
-
-if not os.path.exists(output):
-    gdown.download(f"https://drive.google.com/uc?id={file_id}", output, quiet=False)
+## FAISS 인덱스 디렉토리가 없으면 다운로드
+if not os.path.exists(FAISS_INDEX_PATH):
+    os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+    gdown.download_folder(
+        url=f"https://drive.google.com/drive/folders/{FOLDER_ID}",
+        output=FAISS_INDEX_PATH,
+        quiet=False,
+        use_cookies=False
+    )
     st.success("FAISS 인덱스 다운로드 완료!")
-
+    
 def clean_incomplete_sentences(content):
     """
     미완성 문장을 처리하는 함수 (streamlit용)

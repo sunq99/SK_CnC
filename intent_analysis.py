@@ -1,4 +1,3 @@
-%%writefile intent_analysis.py
 import re
 import json
 import streamlit as st

@@ -16,7 +16,7 @@ def intent_analysis(user_input):
     llm = ChatOpenAI(
           temperature=0,
           model_name = 'gpt-4-turbo',
-          openai_api_key='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'
+          openai_api_key=OPENAI_API_KEY
     )
 
     # 사용자 질문 의도 파악 ########################## 수정 (5,6번 제거, 시행령 추가)

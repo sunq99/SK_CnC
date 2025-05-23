@@ -8,4 +8,5 @@ streamlit
 openai
 gspread
 oauth2client
+sentence-transformers
 #flash-attn --no-build-isolation

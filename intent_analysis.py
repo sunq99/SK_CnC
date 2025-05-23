@@ -1,6 +1,6 @@
+%%writefile intent_analysis.py
 import re
 import json
-from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.retrievers.multi_query import MultiQueryRetriever

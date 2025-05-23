@@ -1,4 +1,3 @@
-%%writefile intent_analysis.py
 import re
 import json
 from langchain.vectorstores import FAISS

@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import streamlit as st
 from langchain.chat_models import ChatOpenAI
 from langchain_openai import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -8,7 +9,7 @@ from ragas import EvaluationDataset, evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 
-openai_api_key=OPENAI_API_KEY
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 ragas_llm = ChatOpenAI(model="gpt-4o")
 ragas_embeddings = OpenAIEmbeddings()

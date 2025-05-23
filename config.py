@@ -1,3 +1,2 @@
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 FAISS_INDEX_PATH = "/content/faiss_index_path"
-# CSV_PATH = "/content/저작권법 조문.csv"

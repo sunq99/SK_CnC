@@ -1,2 +1,1 @@
-OPENAI_API_KEY = "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"
 FAISS_INDEX_PATH = "/content/faiss_index_path"

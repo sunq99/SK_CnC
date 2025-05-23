@@ -19,6 +19,7 @@ from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
 
 openai.api_key = st.secrets["OPENAI_API_KEY"]
+openai.api_key = OPENAI_API_KEY
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def clean_incomplete_sentences(content):

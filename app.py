@@ -18,7 +18,7 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
 
-#openai.api_key = OPENAI_API_KEY
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")

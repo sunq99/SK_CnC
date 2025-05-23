@@ -5,6 +5,7 @@ faiss-cpu
 tiktoken
 pyngrok
 streamlit
+openai
 gspread
 oauth2client
 flash-attn --no-build-isolation

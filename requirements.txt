@@ -4,6 +4,7 @@ langchain-community
 langchain_openai
 faiss-cpu
 tiktoken
+gdown
 pyngrok
 streamlit
 openai

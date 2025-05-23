@@ -5,7 +5,7 @@ import json
 
 # import openai
 from openai import OpenAI
-from config import OPENAI_API_KEY
+#from config import OPENAI_API_KEY
 from intent_analysis import intent_analysis
 from generate_multiquery_and_retrieve import generate_multiquery_and_retrieve
 from generate_answer_and_evaluate import generate_answer_and_evaluate
@@ -19,7 +19,7 @@ from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
 
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-#client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")
 st.title("ASAC 저작권법 법률 자문에 오신 것을 환영합니다.")
 

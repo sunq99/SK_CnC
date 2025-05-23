@@ -1,4 +1,3 @@
-%%writefile generate_multiquery_and_retrieve.py
 from langchain.prompts import PromptTemplate
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers.contextual_compression import ContextualCompressionRetriever  # (필요 시)

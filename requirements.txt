@@ -12,6 +12,3 @@ oauth2client
 sentence-transformers
 ragas
 #flash-attn --no-build-isolation
-
-!gdown 1-Kj768zG_e2td3uPTwsDn8C5aKzRDHpA
-!gdown 1-CWb77ho-P5j1ZZTMXG7Iey4nXaFkoAr

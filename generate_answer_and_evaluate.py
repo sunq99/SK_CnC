@@ -1,7 +1,6 @@
 import os
 import re
 import json
-from config import OPENAI_API_KEY, FAISS_INDEX_PATH
 from langchain.chat_models import ChatOpenAI
 from langchain_openai import ChatOpenAI
 from langchain.embeddings.openai import OpenAIEmbeddings

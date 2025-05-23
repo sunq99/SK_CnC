@@ -1,10 +1,11 @@
+%%writefile app.py
 import streamlit as st
 import re
 import time
 import json
 
 import openai
-#from openai import OpenAI
+from openai import OpenAI
 from config import OPENAI_API_KEY
 from intent_analysis import intent_analysis
 from generate_multiquery_and_retrieve import generate_multiquery_and_retrieve
@@ -18,8 +19,8 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.chat_models import ChatOpenAI
 from sentence_transformers import CrossEncoder
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-#client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def clean_incomplete_sentences(content):
     """

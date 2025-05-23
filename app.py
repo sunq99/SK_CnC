@@ -2,6 +2,7 @@ import streamlit as st
 import re
 import time
 import json
+import gdown
 import os
 
 import openai
@@ -22,12 +23,16 @@ from sentence_transformers import CrossEncoder
 openai.api_key = OPENAI_API_KEY
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-uploaded_file = st.file_uploader("FAISS 인덱스 파일 업로드 (index.faiss)", type=["faiss"])
-if uploaded_file is not None:
-    os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
-    with open(os.path.join(FAISS_INDEX_PATH, "index.faiss"), "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.success("index.faiss 업로드 완료")
+FAISS_INDEX_PATH = "faiss_index"
+os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+
+# Google Drive 공유 링크에서 파일 ID 추출
+file_id = "1-Kj768zG_e2td3uPTwsDn8C5aKzRDHpA"
+output = f"{FAISS_INDEX_PATH}/index.faiss"
+
+if not os.path.exists(output):
+    gdown.download(f"https://drive.google.com/uc?id={file_id}", output, quiet=False)
+    st.success("FAISS 인덱스 다운로드 완료!")
 
 def clean_incomplete_sentences(content):
     """

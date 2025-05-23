@@ -9,7 +9,7 @@ from ragas import EvaluationDataset, evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+#OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 ragas_llm = ChatOpenAI(model="gpt-4o")
 ragas_embeddings = OpenAIEmbeddings()

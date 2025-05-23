@@ -8,4 +8,4 @@ streamlit
 openai
 gspread
 oauth2client
-flash-attn --no-build-isolation
+#flash-attn --no-build-isolation

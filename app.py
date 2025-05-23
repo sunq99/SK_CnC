@@ -1,167 +1,228 @@
+import streamlit as st
+import re
+import time
 import json
-from config import OPENAI_API_KEY, FAISS_INDEX_PATH
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.retrievers.document_compressors import CrossEncoderReranker
-from transformers import AutoModel
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.chat_models import ChatOpenAI
-from ragas import EvaluationDataset, evaluate
-from ragas.llms import LangchainLLMWrapper
-from ragas.metrics import Faithfulness, ResponseRelevancy
+
+import openai
+from openai import OpenAI
+from config import OPENAI_API_KEY
 from intent_analysis import intent_analysis
 from generate_multiquery_and_retrieve import generate_multiquery_and_retrieve
 from generate_answer_and_evaluate import generate_answer_and_evaluate
+from all_step import all_step
+from utils import linkify_articles
+from google_sheets import append_feedback_to_sheet
 from langchain.vectorstores import FAISS
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain.chat_models import ChatOpenAI
+from sentence_transformers import CrossEncoder
 
-def all_step(query):
-    MAX_RETRIES = 3
-    retry_count = 0
-    final_result = None
-    fallback_results = []
-    FAIL_MESSAGE = "죄송합니다. 질문에 대한 정보를 찾을 수 없습니다. 조금 더 구체적인 상황을 추가해서 질문해주세요."
-    success_attempt = None
+openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-    intent_result = intent_analysis(query)
-    if not intent_result['is_copyright_related']:
-        return "저작권법과 관련된 질문을 해주세요. 다른 법령에 관한 질문은 답변하기 어렵습니다.", [], None, [], "기타", "기타"
-
-    embeddings_model = OpenAIEmbeddings(
-        model="text-embedding-3-large",
-        openai_api_key=OPENAI_API_KEY
-    )
-    vectorstore = FAISS.load_local(FAISS_INDEX_PATH, embeddings_model, allow_dangerous_deserialization=True)
-
-    llm = ChatOpenAI(
-        temperature=0,
-        model_name='gpt-4-turbo',
-        openai_api_key=OPENAI_API_KEY
-    )
-
-    retriever = MultiQueryRetriever.from_llm(
-        retriever=vectorstore.as_retriever(),
-        llm=llm
-    )
-
-    # ✅ 대화 제목, 카테고리, 관련 질문 한 번에 생성
-    metadata_prompt = f"""
-    다음은 사용자의 질문입니다:
-
-    "{query}"
-
-    이 질문에 대해 다음 항목을 순서대로 출력해주세요:
-
-    1. 대화 제목 (15자 이내, 따옴표 없이)
-    2. 카테고리 (한 단어나 짧은 문장)
-    3. 관련된 추가 질문 3가지 (줄바꿈으로 구분)
-
-    출력 예시:
-
-    제목: 유튜브 음악 저작권
-    카테고리: 음악저작권
-    관련 질문:
-    - 유튜브 영상에 배경음악으로 상업곡을 사용하면 문제가 되나요?
-    - 강의자료에 배경음악을 삽입해도 되나요?
-    - 다른 사람의 음악을 편집해서 써도 되나요?
+def clean_incomplete_sentences(content):
     """
-    metadata_result = llm.predict(metadata_prompt).strip()
-    lines = metadata_result.splitlines()
-    title = lines[0].replace("제목:", "").strip()
-    category = lines[1].replace("카테고리:", "").strip()
-    related_questions = [line.replace("- ", "").strip() for line in lines[3:] if line.strip()]
+    미완성 문장을 처리하는 함수 (streamlit용)
+    """
+    import re
 
-    model = AutoModel.from_pretrained(
-        'jinaai/jina-reranker-m0',
-        torch_dtype="auto",
-        trust_remote_code=True,
-        attn_implementation="flash_attention_2"
-    )
-    model.to("cuda")
+    # 1. 문장 시작 부분의 쉼표 제거
+    if content.strip().startswith(','):
+        content = content.strip()[1:].strip()
+        content = "...(중략) " + content
 
-    # ✅ 문서 필터 설정
-    document_type_filters = []
-    for doc_type in intent_result['document_types']:
-        if doc_type == "법령":
-            law_filter = {"문서유형": "법령"}
-            article_num = intent_result['specific_article'].get("article")
-            ho_num = intent_result['specific_article'].get("ho")
-            if article_num:
-                law_filter["조문번호"] = f"{article_num}조"
-                if ho_num:
-                    law_filter["호번호"] = ho_num
-            document_type_filters.append(law_filter)
+    # 2. 문장 시작 부분의 닫힌 괄호 제거 (개선된 버전)
+    if content.strip().startswith(')'):
+        # 닫힌 괄호와 그 다음의 연결어들을 모두 제거
+        content = re.sub(r'^\s*\)\s*(및|그리고|또는|혹은)?\s*', '', content).strip()
+        if content:
+            content = "...(전략) " + content
 
-        elif doc_type == "부칙":
-            sub_filter = {"문서유형": "부칙"}
-            article_num = intent_result['specific_article'].get("article")
-            if article_num:
-                sub_filter["조문번호"] = f"{article_num}조"
-            document_type_filters.append(sub_filter)
+    # 3. 법률 개정 날짜 패턴 처리
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s*법률\s*제\d+호로\s*개정되기\s*전의\s*것\)\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
 
-        elif doc_type == "시행령":
-            ord_filter = {"문서유형": "시행령"}
-            article_num = intent_result['specific_article'].get("article")
-            ho_num = intent_result['specific_article'].get("ho")
-            if article_num:
-                ord_filter["조문번호"] = f"{article_num}조"
-                if ho_num:
-                    ord_filter["호번호"] = ho_num
-            document_type_filters.append(ord_filter)
+    # 4. 불완전한 법률 조항 참조 처리
+    pattern = r'^\s*전의\s*것\)\s*제\d+조(?:의\d+)?\s*'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
 
-        elif doc_type == "판례":
-            case_filter = {"문서유형": "판례"}
-            article_num = intent_result['specific_article'].get("article")
-            ho_num = intent_result['specific_article'].get("ho")
-            related_article = []
-            if article_num:
-                if ho_num:
-                    related_article.append(f"저작권법 제{article_num}조 제{ho_num}호")
-                else:
-                    related_article.append(f"저작권법 제{article_num}조")
-            if related_article:
-                case_filter["참조조문"] = {"$in": related_article}
-            document_type_filters.append(case_filter)
+    # 5. 숫자와 점으로만 시작하는 경우
+    pattern = r'^\s*\d{1,2}\.\s*\d{1,2}\.\s+'
+    if re.match(pattern, content):
+        content = re.sub(pattern, '', content)
+        if content.strip():
+            content = "...(중략) " + content
 
-        elif doc_type == "해석례":
-            exp_filter = {"문서유형": "해석례"}
-            document_type_filters.append(exp_filter)
+    # 6. 빈 문장이나 너무 짧은 문장 처리
+    content = content.strip()
+    if not content or len(content) < 5:
+        return None
 
-    final_filter = {"$or": document_type_filters} if document_type_filters else {}
-    if final_filter:
-        vectorstore.as_retriever().search_kwargs["filter"] = final_filter
+    return content
 
-    while retry_count < MAX_RETRIES:
-        filtered_docs = generate_multiquery_and_retrieve(query, retry_count, retriever, llm, model)
-        final_answer, final_ref, evaluation_result = generate_answer_and_evaluate(query, filtered_docs, llm)
+st.set_page_config(page_title="ASAC 법률자문 AI", layout="wide", page_icon="📚")
+st.title("ASAC 저작권법 법률 자문에 오신 것을 환영합니다.")
 
-        faithfulness = evaluation_result["faithfulness"][0]
-        relevancy = evaluation_result["answer_relevancy"][0]
+st.markdown("""
+<div style='font-size:18px; line-height:1.6'>
+저작권법 전문 생성형 AI가 법령, 판례, 해석례를 기반으로 신속하고 신뢰성 있는 자문을 제공합니다.<br><br>
+</div>
+""", unsafe_allow_html=True)
 
-        if faithfulness >= 0.5 and relevancy >= 0.7:
-            final_result = final_answer
-            success_attempt = retry_count + 1
-            break
-        elif 0.1 < faithfulness < 0.5 and relevancy >= 0.8:
-            fallback_results.append({
-                "answer": final_answer,
-                "docs": filtered_docs,
-                "final_ref": final_ref,
-                "faithfulness": faithfulness,
-                "relevancy": relevancy,
-                "retry": retry_count + 1
-            })
+st.markdown("""
+<div style='font-size:15px; color:#888; border:1px solid #ddd; padding:10px; border-radius:5px; margin-bottom:10px;'>
+    <div style='font-size:20px; line-height:1.6; color:#888;'><b>📌 질문 예시</b></div>
+    <div>　　Q. 유튜브 영상에 다른 사람의 음악을 배경으로 쓰면 저작권 침해인가요?</div>
+    <div>　　Q. 허락 없이 써도 되는 저작물의 조건에 뭐가 있나요?</div>
+    <div>　　Q. 유튜브에 올리는 것과 개인 블로그에 쓰는 것 중 뭐가 더 문제인가요?</div>
+</div>
+""", unsafe_allow_html=True)
 
-        retry_count += 1
+# 세션 상태 초기화
+for key in ["messages", "chat_sessions", "active_chat", "related_questions", "prompt_input"]:
+    if key not in st.session_state:
+        st.session_state[key] = [] if key in ["messages", "related_questions"] else {} if key == "chat_sessions" else None
 
-    if final_result:
-        success_message = f"✅ {success_attempt}회차 시도에 정식 기준으로 답변이 생성되었습니다."
-        final_result_with_note = f"{success_message}\n\n{final_result}"
-        return final_result_with_note, final_result, filtered_docs, evaluation_result, related_questions, category, title
+# 사이드바
+with st.sidebar:
+    if st.button("➕ 새 대화"):
+        st.session_state.messages = []
+        st.session_state.active_chat = "대화 준비 중..."
+        st.session_state.related_questions = []
+        st.session_state.prompt_input = None
 
-    elif fallback_results:
-        best_fallback = max(fallback_results, key=lambda x: (x["relevancy"] + x["faithfulness"]))
-        fallback_msg = f"""⚠️ 정식 기준은 충족하지 못했지만 {best_fallback['retry']}회차 시도에 유사한 답변이 생성되었습니다:\n\n{best_fallback['answer']}\n\n※ 더 정확한 답변을 원하시면 질문을 조금 더 구체적으로 작성해 주세요."""
-        return fallback_msg, best_fallback["answer"], best_fallback["docs"], evaluation_result, related_questions, category, title
+    st.subheader("📁 이전 대화")
+    for title in reversed(list(st.session_state.chat_sessions.keys())):
+        if st.button(title):
+            st.session_state.messages = st.session_state.chat_sessions[title]["messages"]
+            st.session_state.active_chat = title
+            st.session_state.related_questions = st.session_state.chat_sessions[title].get("related", [])
+            st.session_state.prompt_input = None
 
-    else:
-        return FAIL_MESSAGE, FAIL_MESSAGE, [], None, related_questions, category, title
+# 사용자 입력
+user_input = st.chat_input("저작권법에 관한 궁금한 점을 입력하세요.")
+if user_input:
+    st.session_state["prompt_input"] = user_input
+
+# 질문이 들어온 경우 처리
+if st.session_state["prompt_input"]:
+    prompt = st.session_state["prompt_input"]
+    spinner = st.empty()
+    spinner.info("🧠 AI가 신중히 답변을 구성하고 있습니다...")
+
+    try:
+        final_result_with_note, final_answer, source_docs, evaluation_result, related_questions, category, title = all_step(prompt)
+        st.session_state.related_questions = related_questions
+
+        st.session_state.messages.append({"role": "user", "content": prompt, "source_docs": []})
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": final_result_with_note,
+            "source_docs": source_docs
+        })
+
+        st.session_state.active_chat = title
+        st.session_state.chat_sessions[title] = {
+            "messages": st.session_state.messages,
+            "category": category,
+            "related": related_questions
+        }
+
+        spinner.empty()
+
+    except Exception as e:
+        spinner.empty()
+        st.error(f"❌ 오류 발생: {e}")
+        st.stop()
+
+    finally:
+        st.session_state["prompt_input"] = None
+
+# 채팅 메시지 출력
+if st.session_state.active_chat and st.session_state.active_chat != "대화 준비 중...":
+    category = st.session_state.chat_sessions[st.session_state.active_chat].get("category", "기타")
+    if not category or not category.strip():
+        category = "기타"
+    st.markdown(f"📂 **카테고리:** `{category}`")
+
+    with st.container():
+        for idx, msg in enumerate(st.session_state.messages):
+            with st.chat_message(msg["role"]):
+                st.markdown(linkify_articles(msg["content"]), unsafe_allow_html=True)
+
+                if msg["role"] == "assistant" and "source_docs" in msg:
+                    st.markdown("📎 **참조 문서 목록**")
+                    for i, doc in enumerate(msg["source_docs"]):
+                        doc_type = doc.metadata.get("문서유형", "문서")
+                        type_icon_map = {
+                          "판례": "📄",
+                          "해석례": "📘",
+                          "법령": "📜",
+                          "시행령": "📑",
+                          "부칙": "📂",
+                        }
+                        icon = type_icon_map.get(doc_type, "📎")
+                        label = f"{icon} {doc_type or '문서'} {i+1}"
+                        st.write(f"**{label}**")
+                        doc_content = doc.page_content
+                        cleaned_content = clean_incomplete_sentences(doc_content)
+                        if cleaned_content:
+                            display_content = cleaned_content[:300]
+                            if len(cleaned_content) > 300:
+                                display_content += "..."
+                            st.write(display_content)
+                        else:
+                            st.write("(내용 없음)")
+
+                        visible_keys = ['사건명', '사건번호', '선고일자', '법원명']
+                        meta = {k: v for k, v in doc.metadata.items() if k in visible_keys}
+
+                        if meta:
+                            court = meta.get('법원명', '')
+                            case_title = meta.get('사건명', '')
+                            case_number = meta.get('사건번호', '')
+                            date = meta.get('선고일자', '')
+
+                            summary = f"""
+                            <div style='background-color:#f9f9f9; color:green; border:1px solid #ddd; padding:10px; border-radius:5px; margin-bottom:10px;'>
+                            📄 {date}에 {court}에서 '{case_title}' 사건({case_number})에 대한 판결입니다.
+                            </div>
+                            """
+                            st.markdown(summary, unsafe_allow_html=True)
+
+                if msg["role"] == "assistant":
+                    feedback_key = f"feedback_{idx}"
+                    if not st.session_state.get(feedback_key):
+                        with st.expander("이 답변이 도움이 되었나요?"):
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                if st.button("👍 도움이 됐어요", key=f"helpful_{idx}"):
+                                    append_feedback_to_sheet("도움이 됐어요", msg["content"], st.session_state.active_chat)
+                                    st.success("감사합니다.")
+                                    st.session_state[feedback_key] = True
+                            with col2:
+                                if st.button("👎 더 궁금해요", key=f"more_info_{idx}"):
+                                    append_feedback_to_sheet("더 궁금해요", msg["content"], st.session_state.active_chat)
+                                    st.success("추가 개선하게사합니다.")
+                                    st.session_state[feedback_key] = True
+                            with col3:
+                                if st.button("🤔 이해가 어렵습니다", key=f"difficult_{idx}"):
+                                    append_feedback_to_sheet("이해 어렵습니다", msg["content"], st.session_state.active_chat)
+                                    st.success("도움 주셔서 감사합니다.")
+                                    st.session_state[feedback_key] = True
+
+    valid_related = [q for q in st.session_state.related_questions if q.strip()]
+    if valid_related:
+        st.markdown("📚 **추가로 궁금할 수 있는 질문**")
+        for idx, q in enumerate(valid_related[:3]):
+            if st.button(q, key=f"related_q_{idx}"):
+                st.session_state["prompt_input"] = q
+else:
+    st.info("왼쪽에서 대화를 선택하거나 새 대화를 시작하세요.")
